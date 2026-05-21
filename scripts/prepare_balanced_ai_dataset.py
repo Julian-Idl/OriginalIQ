@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+import argparse
+import csv
+from collections import defaultdict
+from pathlib import Path
+
+
+def word_window(text: str, target_words: int) -> str:
+    words = text.split()
+    if len(words) <= target_words:
+        return text
+    target_words = max(40, min(target_words, 220))
+    start = min(max(len(words) // 5, 0), max(len(words) - target_words, 0))
+    return " ".join(words[start : start + target_words])
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Balance AI/human research dataset lengths by source pair.")
+    parser.add_argument("--input", default="data/processed/research_ai_human.csv")
+    parser.add_argument("--output", default="data/processed/research_ai_human_balanced.csv")
+    args = parser.parse_args()
+
+    by_source: dict[str, dict[str, str]] = defaultdict(dict)
+    with open(args.input, newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            by_source[row["source_file"]][row["label"]] = row["text"]
+
+    rows = []
+    for source_file, pair in sorted(by_source.items()):
+        human = pair.get("0", "").strip()
+        ai = pair.get("1", "").strip()
+        if not human or not ai:
+            continue
+        ai_words = len(ai.split())
+        human_excerpt = word_window(human, max(ai_words + 35, 80))
+        rows.append({"text": human_excerpt, "label": 0, "source_file": source_file})
+        rows.append({"text": ai, "label": 1, "source_file": source_file})
+
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    with open(args.output, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["text", "label", "source_file"])
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(f"wrote={len(rows)} sources={len(rows) // 2} output={args.output}")
+
+
+if __name__ == "__main__":
+    main()
+

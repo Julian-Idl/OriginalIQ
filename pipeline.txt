@@ -1,0 +1,252 @@
+0. INPUT LAYER
+Formats: PDF, DOCX, TXT
+
+Tools:
+
+PyMuPDF, python-docx
+
+Output: raw cleaned text
+
+1. PREPROCESSING
+Library: spaCy
+
+Steps:
+
+Sentence segmentation
+
+Lowercasing
+
+Optional: remove references/citations
+
+Chunking Strategy:
+250 words per chunk
+
+50-word overlap
+
+👉 Output: chunks[]
+
+2. PLAGIARISM DETECTION PIPELINE
+2.1 Embeddings
+Model: Sentence-BERT (all-mpnet-base-v2)
+
+Convert chunks → vectors
+
+2.2 Local Retrieval
+Vector DB: FAISS
+
+Top-K = 10 matches
+
+Dataset (build your corpus):
+
+Past assignments (if available)
+
+Research papers (arXiv dump)
+
+Wikipedia dump
+
+2.3 Web Retrieval (Low-Cost Final Setup)
+Common Crawl
+
+API: SerpAPI
+
+Trigger:
+
+if similarity < 0.75 → search web
+Query Strategy:
+Extract 1–2 strong sentences
+
+Wrap in quotes → exact match search
+
+Pipeline:
+Get top 5 URLs
+
+Scrape (BeautifulSoup / Playwright)
+
+Clean + chunk
+
+Embed + add to FAISS (temporary index)
+
+2.4 Cross-Encoder Re-ranking
+Model: cross-encoder/ms-marco-MiniLM-L-6-v2
+
+Input: (chunk, candidate)
+
+Output: refined similarity
+
+2.5 Fine-Grained Matching
+Techniques:
+
+Cosine similarity
+
+N-gram overlap (3–5 grams)
+
+Jaccard similarity
+
+Optional:
+
+Train meta-classifier
+
+2.6 Alignment + Highlighting
+Algorithm:
+
+LCS / Smith-Waterman
+
+Output:
+
+Highlight spans
+
+Source mapping
+
+2.7 Final Score
+Aggregate chunk scores
+
+Output:
+
+% plagiarism
+
+per-source contribution
+
+3. AI DETECTION PIPELINE (CORE RESEARCH PART)
+3.1 Transformer Classifier
+Model: RoBERTa
+
+Fine-tuning:
+Task: Binary classification (AI vs Human)
+
+Loss: Cross-entropy
+
+Input: chunk
+
+3.2 Perplexity Signal
+Model: GPT-2 (small)
+
+Metric:
+
+Perplexity per chunk
+
+3.3 Stylometric Features
+Using spaCy:
+
+Extract:
+
+Sentence length variance
+
+Type-token ratio
+
+POS entropy
+
+Punctuation ratio
+
+Burstiness
+
+3.4 Feature Vector
+[roberta_score,
+ perplexity,
+ sentence_variance,
+ lexical_diversity,
+ pos_entropy,
+ punctuation_ratio]
+3.5 Ensemble Model
+Library: scikit-learn
+
+Model:
+
+Logistic Regression → upgrade to LightGBM
+
+3.6 Output
+AI probability (0–100%)
+
+Confidence
+
+Explanation
+
+4. DATASETS (VERY IMPORTANT)
+🔹 Plagiarism
+PAN Plagiarism Dataset
+
+Quora Question Pairs
+
+PAWS dataset
+
+🔹 AI Detection
+Human:
+Wikipedia dump
+
+Essays (Kaggle datasets)
+
+AI:
+Generate using GPT-4 or open LLMs
+
+Generate:
+
+Essays
+
+Paraphrases
+
+Summaries
+
+5. MODEL FINE-TUNING DETAILS
+RoBERTa Fine-Tuning
+Epochs: 3–5
+
+LR: 2e-5
+
+Batch size: 16
+
+Max length: 512
+
+SBERT (Optional Fine-Tune)
+Dataset: paraphrase datasets
+
+Loss: cosine similarity loss
+
+Ensemble Training
+Input: features from all signals
+
+Train on validation predictions
+
+6. TECH STACK
+Backend
+Node.js (API gateway)
+Next.js
+React
+Tailwind CSS
+Lucide React (Icons) (https://lucide.dev/)
+React Hook Form and Zod (Form Handling & Validation)
+React Context API, `useState`, `useEffect` (State Management)
+Typescript
+JavaScript
+
+ML Service
+Python + FastAPI
+
+ML Libraries
+PyTorch
+
+Hugging Face Transformers
+
+scikit-learn
+
+Storage
+PostgreSQL
+
+FAISS (embeddings)
+
+Scraping
+Playwright (reliable)
+
+BeautifulSoup (fast)
+
+Deployment
+Local → Docker
+
+Scale → AWS EC2 (GPU)
+
+7. PERFORMANCE STRATEGY
+Batch inference
+
+Parallel chunk processing
+
+Cache embeddings
+
+Limit cross-encoder calls
