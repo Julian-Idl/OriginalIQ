@@ -1,10 +1,10 @@
-# Integrity Lab: Plagiarism and AI Detection
+# OriginalIQ: Plagiarism and AI Detection
 
 Full-stack NLP project based on `pipeline.txt`.
 
 ## Architecture
 
-- `frontend/`: Next.js + React + Tailwind UI for upload, analysis, highlights, sources, and AI explanation.
+- `frontend/`: Next.js + React + Tailwind UI for upload, analysis, plagiarism/AI highlights, source evidence, and report download.
 - `backend/`: Node.js Express API gateway with `/upload` and `/analyze`.
 - `ml_service/`: FastAPI ML service with the requested pipeline modules.
 - `infra/postgres/`: PostgreSQL schema for documents and analysis results.
@@ -130,8 +130,13 @@ Analysis JSON includes:
   "plagiarism_score": 0,
   "ai_score": 0,
   "highlighted_text_spans": [],
+  "ai_highlighted_spans": [],
   "source_urls": [],
   "ai_explanation": "",
   "chunks_analyzed": 0
 }
 ```
+
+## Reports
+
+OriginalIQ can generate a PDF report from `GET /report/:analysisId` only when the analyzed document was uploaded as PDF or DOCX and has at least 5 pages. PDF page counts are read directly; DOCX page count is estimated from extracted word count.

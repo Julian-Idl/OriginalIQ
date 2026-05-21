@@ -18,9 +18,10 @@ router.post("/", async (req, res, next) => {
     const payload = analyzeSchema.parse(req.body);
     let text = payload.text;
     let filename = payload.filename;
+    let document = null;
 
     if (payload.document_id) {
-      const document = await getDocument(payload.document_id);
+      document = await getDocument(payload.document_id);
       if (!document) {
         return res.status(404).json({ error: "Document not found." });
       }
@@ -34,6 +35,23 @@ router.post("/", async (req, res, next) => {
       filename
     });
 
+    result.metadata = {
+      ...(result.metadata || {}),
+      document: document
+        ? {
+            filename: document.filename,
+            page_count: document.page_count,
+            document_kind: document.document_kind,
+            report_eligible: document.report_eligible
+          }
+        : {
+            filename: filename || "pasted-text.txt",
+            page_count: 0,
+            document_kind: "text",
+            report_eligible: false
+          }
+    };
+
     const saved = await saveAnalysis({
       documentId: payload.document_id,
       result
@@ -42,6 +60,7 @@ router.post("/", async (req, res, next) => {
     res.json({
       analysis_id: saved.id,
       document_id: payload.document_id || null,
+      report_available: Boolean(result.metadata.document.report_eligible),
       ...result
     });
   } catch (error) {
@@ -50,4 +69,3 @@ router.post("/", async (req, res, next) => {
 });
 
 module.exports = router;
-

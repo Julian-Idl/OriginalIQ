@@ -31,13 +31,19 @@ router.post("/", upload.single("file"), async (req, res, next) => {
       metadata = {
         filename: req.file.originalname,
         mimeType: req.file.mimetype,
-        sizeBytes: req.file.size
+        sizeBytes: req.file.size,
+        pageCount: extracted.page_count || 0,
+        documentKind: extracted.document_kind || "text",
+        reportEligible: Boolean(extracted.report_eligible)
       };
     } else {
       const parsed = textUploadSchema.parse(req.body);
       extractedText = parsed.text || "";
       metadata.filename = parsed.filename || metadata.filename;
       metadata.sizeBytes = Buffer.byteLength(extractedText, "utf8");
+      metadata.pageCount = 0;
+      metadata.documentKind = "text";
+      metadata.reportEligible = false;
     }
 
     if (!extractedText.trim()) {
@@ -55,7 +61,10 @@ router.post("/", upload.single("file"), async (req, res, next) => {
       created_at: document.created_at,
       text_preview: extractedText.slice(0, 800),
       text: extractedText,
-      character_count: extractedText.length
+      character_count: extractedText.length,
+      page_count: document.page_count,
+      document_kind: document.document_kind,
+      report_eligible: document.report_eligible
     });
   } catch (error) {
     next(error);

@@ -4,6 +4,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const uploadRoute = require("./routes/upload");
 const analyzeRoute = require("./routes/analyze");
+const reportRoute = require("./routes/report");
 const mlClient = require("./services/mlClient");
 const { config } = require("./config");
 
@@ -28,6 +29,7 @@ function createApp() {
 
   app.use("/upload", uploadRoute);
   app.use("/analyze", analyzeRoute);
+  app.use("/report", reportRoute);
 
   app.use((req, res) => {
     res.status(404).json({ error: `Route not found: ${req.method} ${req.path}` });
@@ -46,4 +48,3 @@ function createApp() {
 }
 
 module.exports = { createApp };
-

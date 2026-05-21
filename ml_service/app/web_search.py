@@ -79,12 +79,14 @@ async def scrape_url(url: str) -> str:
 async def web_candidates_for_chunk(chunk_text: str, limit: int = 5) -> list[dict]:
     seen_urls: set[str] = set()
     results: list[dict] = []
+    queries = build_queries(chunk_text)
 
-    for query in build_queries(chunk_text):
+    for query in queries:
         for result in await serpapi_search(query, limit=limit):
             if result["url"] in seen_urls:
                 continue
             seen_urls.add(result["url"])
+            result["query"] = query
             results.append(result)
             if len(results) >= limit:
                 break
@@ -99,6 +101,5 @@ async def web_candidates_for_chunk(chunk_text: str, limit: int = 5) -> list[dict
             result["error"] = str(error)
             text = ""
         if text:
-            scraped.append({**result, "text": text})
+            scraped.append({**result, "text": text, "queries": queries})
     return scraped
-

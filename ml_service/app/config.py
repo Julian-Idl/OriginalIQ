@@ -4,9 +4,15 @@ from pathlib import Path
 import torch
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(str(PROJECT_ROOT / ".env"), ".env"),
+        extra="ignore",
+        case_sensitive=False,
+    )
 
     serpapi_api_key: str = ""
     sentence_model: str = "sentence-transformers/all-mpnet-base-v2"
@@ -23,7 +29,7 @@ class Settings(BaseSettings):
 
     @property
     def project_root(self) -> Path:
-        return Path(__file__).resolve().parents[2]
+        return PROJECT_ROOT
 
     def _resolve_project_path(self, value: str) -> str:
         path = Path(value)

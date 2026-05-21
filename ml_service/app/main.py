@@ -2,7 +2,7 @@ from fastapi import FastAPI, File, UploadFile
 
 from .config import get_settings
 from .pipeline import analyze_document
-from .preprocessing import extract_text_from_upload
+from .preprocessing import extract_text_from_upload, upload_metadata
 from .schemas import AnalyzeRequest, AnalyzeResponse
 
 app = FastAPI(
@@ -27,10 +27,12 @@ def health():
 async def extract(file: UploadFile = File(...)):
     content = await file.read()
     text = extract_text_from_upload(file.filename or "upload.txt", file.content_type, content)
+    metadata = upload_metadata(file.filename or "upload.txt", file.content_type, content, text)
     return {
         "filename": file.filename,
         "content_type": file.content_type,
         "character_count": len(text),
+        **metadata,
         "text": text,
     }
 
@@ -42,4 +44,3 @@ async def analyze(payload: AnalyzeRequest):
         document_id=payload.document_id,
         filename=payload.filename,
     )
-

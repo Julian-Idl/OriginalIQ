@@ -3,6 +3,9 @@ CREATE TABLE IF NOT EXISTS documents (
   filename TEXT,
   mime_type TEXT,
   size_bytes BIGINT,
+  page_count INTEGER NOT NULL DEFAULT 0,
+  document_kind TEXT NOT NULL DEFAULT 'text',
+  report_eligible BOOLEAN NOT NULL DEFAULT false,
   text_content TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -18,4 +21,3 @@ CREATE TABLE IF NOT EXISTS analyses (
 
 CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_analyses_created_at ON analyses(created_at DESC);
-

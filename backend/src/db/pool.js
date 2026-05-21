@@ -12,9 +12,16 @@ async function ensureSchema() {
       filename TEXT,
       mime_type TEXT,
       size_bytes BIGINT,
+      page_count INTEGER NOT NULL DEFAULT 0,
+      document_kind TEXT NOT NULL DEFAULT 'text',
+      report_eligible BOOLEAN NOT NULL DEFAULT false,
       text_content TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    ALTER TABLE documents ADD COLUMN IF NOT EXISTS page_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE documents ADD COLUMN IF NOT EXISTS document_kind TEXT NOT NULL DEFAULT 'text';
+    ALTER TABLE documents ADD COLUMN IF NOT EXISTS report_eligible BOOLEAN NOT NULL DEFAULT false;
 
     CREATE TABLE IF NOT EXISTS analyses (
       id UUID PRIMARY KEY,
@@ -31,4 +38,3 @@ async function ensureSchema() {
 }
 
 module.exports = { pool, ensureSchema };
-
