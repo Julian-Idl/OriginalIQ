@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from urllib.parse import urlparse
 
@@ -36,7 +37,7 @@ async def serpapi_search(query: str, limit: int = 5) -> list[dict]:
         "api_key": settings.serpapi_api_key,
         "num": limit,
     }
-    async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=settings.web_timeout_seconds, follow_redirects=True) as client:
         response = await client.get("https://serpapi.com/search.json", params=params)
         response.raise_for_status()
         data = response.json()
@@ -61,7 +62,7 @@ async def scrape_url(url: str) -> str:
         "User-Agent": "Mozilla/5.0 plagiarism-detector/1.0 (+local research project)",
         "Accept": "text/html,application/xhtml+xml",
     }
-    async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers=headers) as client:
+    async with httpx.AsyncClient(timeout=get_settings().web_timeout_seconds, follow_redirects=True, headers=headers) as client:
         response = await client.get(url)
         response.raise_for_status()
 
@@ -93,13 +94,21 @@ async def web_candidates_for_chunk(chunk_text: str, limit: int = 5) -> list[dict
         if len(results) >= limit:
             break
 
-    scraped: list[dict] = []
-    for result in results:
-        try:
-            text = await scrape_url(result["url"])
-        except Exception as error:
-            result["error"] = str(error)
-            text = ""
+    semaphore = asyncio.Semaphore(max(1, get_settings().web_search_concurrency))
+
+    async def scrape_result(result: dict) -> dict | None:
+        async with semaphore:
+            try:
+                text = await scrape_url(result["url"])
+            except Exception as error:
+                result["error"] = str(error)
+                text = ""
         if text:
-            scraped.append({**result, "text": text, "queries": queries})
+            return {**result, "text": text, "queries": queries}
+        return None
+
+    scraped: list[dict] = []
+    for item in await asyncio.gather(*(scrape_result(result) for result in results)):
+        if item:
+            scraped.append(item)
     return scraped

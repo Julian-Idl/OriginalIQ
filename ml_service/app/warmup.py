@@ -51,6 +51,7 @@ def warmup_models() -> dict:
             "finished_at": None,
             "duration_seconds": None,
             "device": get_settings().device,
+            "device_info": get_settings().device_info,
             "steps": [],
             "error": None,
         }
@@ -86,4 +87,3 @@ def warmup_models() -> dict:
         _status["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         _status["duration_seconds"] = round(time.perf_counter() - started, 3)
         raise
-

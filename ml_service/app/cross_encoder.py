@@ -14,7 +14,11 @@ def get_cross_encoder() -> CrossEncoder:
     global _model
     if _model is None:
         settings = get_settings()
-        _model = CrossEncoder(settings.cross_encoder_model, device=settings.device)
+        _model = CrossEncoder(
+            settings.cross_encoder_model,
+            device=settings.device,
+            local_files_only=settings.local_files_only,
+        )
     return _model
 
 
@@ -32,4 +36,3 @@ def rerank(query: str, candidates: list, top_n: int = 5) -> list:
         scored.append(candidate)
     scored.sort(key=lambda item: item.score, reverse=True)
     return scored[:top_n]
-

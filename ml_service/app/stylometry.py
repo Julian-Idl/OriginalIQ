@@ -20,7 +20,10 @@ def entropy(values: list[str]) -> float:
 
 def extract_stylometric_features(text: str) -> dict[str, float]:
     nlp = get_nlp()
-    doc = nlp(text)
+    return _features_from_doc(nlp(text), text)
+
+
+def _features_from_doc(doc, text: str) -> dict[str, float]:
     sentences = [sent.text for sent in doc.sents if sent.text.strip()]
     sentence_lengths = [len(tokenize(sentence)) for sentence in sentences]
     tokens = [token.text.lower() for token in doc if token.is_alpha]
@@ -38,3 +41,8 @@ def extract_stylometric_features(text: str) -> dict[str, float]:
         "burstiness": float(np.std(sentence_lengths)) if sentence_lengths else 0.0,
     }
 
+
+def extract_stylometric_features_batch(texts: list[str], batch_size: int = 16) -> list[dict[str, float]]:
+    nlp = get_nlp()
+    docs = nlp.pipe(texts, batch_size=batch_size)
+    return [_features_from_doc(doc, text) for doc, text in zip(docs, texts)]

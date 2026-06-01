@@ -52,7 +52,13 @@ def get_embedding_model() -> SentenceTransformer:
     global _model
     if _model is None:
         settings = get_settings()
-        _model = SentenceTransformer(settings.sentence_model, device=settings.device)
+        _model = SentenceTransformer(
+            settings.sentence_model,
+            device=settings.device,
+            local_files_only=settings.local_files_only,
+        )
+        if settings.device == "cuda" and settings.inference_fp16:
+            _model = _model.half()
     return _model
 
 
@@ -63,11 +69,12 @@ def get_cache() -> EmbeddingCache:
     return _cache
 
 
-def embed_texts(texts: list[str], batch_size: int = 16, normalize: bool = True) -> np.ndarray:
+def embed_texts(texts: list[str], batch_size: int | None = None, normalize: bool = True) -> np.ndarray:
     if not texts:
         return np.empty((0, 768), dtype=np.float32)
 
     settings = get_settings()
+    batch_size = batch_size or settings.embedding_batch_size
     cache = get_cache()
     vectors: list[np.ndarray | None] = []
     misses: list[tuple[int, str, str]] = []
@@ -94,4 +101,3 @@ def embed_texts(texts: list[str], batch_size: int = 16, normalize: bool = True) 
             vectors[idx] = vector
 
     return np.vstack([vector for vector in vectors if vector is not None]).astype(np.float32)
-

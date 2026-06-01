@@ -1,26 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
+import time
 
-from .ai_classifier import roberta_ai_probability
+from .ai_classifier import roberta_ai_probabilities
 from .chunking import TextChunk, chunk_text
 from .config import get_settings
 from .cross_encoder import rerank
 from .embeddings import embed_texts
 from .ensemble import explain_ai, predict_ai_score
 from .highlighting import lcs_coverage, lcs_highlights, merge_spans
-from .perplexity import perplexity
+from .perplexity import perplexities
 from .preprocessing import clean_text
 from .retrieval import RetrievalCandidate, get_store, records_from_texts
 from .schemas import AISpan, AnalyzeResponse, HighlightSpan, SourceResult
 from .similarity import combined_similarity, ngram_overlap
-from .stylometry import extract_stylometric_features
+from .stylometry import extract_stylometric_features_batch
 from .web_search import web_candidates_for_chunk
 
 
 async def _augment_from_web(chunk: TextChunk) -> list[RetrievalCandidate]:
     settings = get_settings()
-    scraped = await web_candidates_for_chunk(chunk.text, limit=settings.max_web_results)
+    try:
+        scraped = await web_candidates_for_chunk(chunk.text, limit=settings.max_web_results)
+    except Exception:
+        return []
     if not scraped:
         return []
 
@@ -30,7 +35,7 @@ async def _augment_from_web(chunk: TextChunk) -> list[RetrievalCandidate]:
         if not page_chunks:
             continue
 
-        vectors = embed_texts([item.text for item in page_chunks], batch_size=16)
+        vectors = embed_texts([item.text for item in page_chunks])
         store = get_store()
         store.add(
             vectors,
@@ -58,9 +63,25 @@ def _candidate_source_type(candidate: RetrievalCandidate) -> str:
     return metadata.get("kind") or "local"
 
 
+def _select_evenly_spaced(items: list[tuple], limit: int) -> list[tuple]:
+    if len(items) <= limit:
+        return items
+    if limit <= 0:
+        return []
+    step = (len(items) - 1) / max(limit - 1, 1)
+    selected = []
+    used: set[int] = set()
+    for index in range(limit):
+        position = round(index * step)
+        if position not in used:
+            selected.append(items[position])
+            used.add(position)
+    return selected
+
+
 def _evaluate_candidates(chunk: TextChunk, vector, candidates: list[RetrievalCandidate]) -> tuple[list[dict], list[HighlightSpan]]:
     ranked = rerank(chunk.text, candidates[:25], top_n=6)
-    candidate_vectors = embed_texts([candidate.text for candidate in ranked], batch_size=16) if ranked else []
+    candidate_vectors = embed_texts([candidate.text for candidate in ranked]) if ranked else []
     matches: list[dict] = []
     highlights: list[HighlightSpan] = []
 
@@ -114,7 +135,7 @@ async def plagiarism_pipeline(text: str) -> tuple[float, list[HighlightSpan], li
     if not chunks:
         return 0.0, [], [], {"retrieval": "no chunks"}
 
-    chunk_vectors = embed_texts([chunk.text for chunk in chunks], batch_size=16)
+    chunk_vectors = embed_texts([chunk.text for chunk in chunks])
     store = get_store()
     retrieved = store.search(chunk_vectors, top_k=settings.top_k)
 
@@ -123,23 +144,33 @@ async def plagiarism_pipeline(text: str) -> tuple[float, list[HighlightSpan], li
     web_triggered = 0
     web_searched_chunks = 0
 
+    search_needed: list[tuple[TextChunk, object]] = []
+
     for chunk, vector, candidates in zip(chunks, chunk_vectors, retrieved):
         best_initial = max([candidate.score for candidate in candidates], default=0.0)
-        expanded_candidates = list(candidates)
-        if best_initial < settings.web_trigger_threshold:
-            web_triggered += 1
-            web_searched_chunks += 1
-            expanded_candidates.extend(await _augment_from_web(chunk))
-
-        chunk_matches, chunk_highlights = _evaluate_candidates(chunk, vector, expanded_candidates)
-        if not chunk_matches and settings.serpapi_api_key and best_initial >= settings.web_trigger_threshold:
-            web_triggered += 1
-            web_searched_chunks += 1
-            web_candidates = await _augment_from_web(chunk)
-            chunk_matches, chunk_highlights = _evaluate_candidates(chunk, vector, web_candidates)
-
+        chunk_matches, chunk_highlights = _evaluate_candidates(chunk, vector, list(candidates))
         all_matches.extend(chunk_matches)
         highlights.extend(chunk_highlights)
+
+        if settings.serpapi_api_key and (not chunk_matches or best_initial < settings.web_trigger_threshold):
+            web_triggered += 1
+            search_needed.append((chunk, vector))
+
+    selected_searches = _select_evenly_spaced(search_needed, settings.max_web_search_chunks)
+    if selected_searches:
+        semaphore = asyncio.Semaphore(max(1, settings.web_search_concurrency))
+
+        async def search_one(chunk: TextChunk):
+            async with semaphore:
+                return await _augment_from_web(chunk)
+
+        web_results = await asyncio.gather(*(search_one(chunk) for chunk, _vector in selected_searches))
+        web_searched_chunks = len(selected_searches)
+
+        for (chunk, vector), web_candidates in zip(selected_searches, web_results):
+            chunk_matches, chunk_highlights = _evaluate_candidates(chunk, vector, web_candidates)
+            all_matches.extend(chunk_matches)
+            highlights.extend(chunk_highlights)
 
     chunk_scores = defaultdict(float)
     for match in all_matches:
@@ -187,24 +218,30 @@ async def plagiarism_pipeline(text: str) -> tuple[float, list[HighlightSpan], li
         "matches": len(all_matches),
         "web_search_triggered_for_chunks": web_triggered,
         "web_searched_chunks": web_searched_chunks,
+        "web_search_limit": settings.max_web_search_chunks,
         "web_search_enabled": bool(settings.serpapi_api_key),
     }
     return plagiarism_score, merge_spans(highlights), sources, metadata
 
 
 def ai_detection_pipeline(text: str) -> tuple[float, str, dict, list[AISpan]]:
+    settings = get_settings()
     chunks = chunk_text(text, chunk_words=250, overlap_words=50)
     chunks = chunks or [TextChunk(id=0, text=text, start_char=0, end_char=len(text), word_count=len(text.split()))]
 
     chunk_features = []
     chunk_scores = []
     ai_spans: list[AISpan] = []
-    for chunk in chunks:
-        style = extract_stylometric_features(chunk.text)
+    chunk_texts = [chunk.text for chunk in chunks]
+    styles = extract_stylometric_features_batch(chunk_texts, batch_size=settings.ai_batch_size)
+    roberta_scores = roberta_ai_probabilities(chunk_texts, batch_size=settings.ai_batch_size)
+    perplexity_scores = perplexities(chunk_texts, batch_size=settings.ai_batch_size)
+
+    for chunk, style, roberta_score, perplexity_score in zip(chunks, styles, roberta_scores, perplexity_scores):
         features = {
             **style,
-            "roberta_score": roberta_ai_probability(chunk.text),
-            "perplexity": perplexity(chunk.text),
+            "roberta_score": roberta_score,
+            "perplexity": perplexity_score,
         }
         score = predict_ai_score(features)
         chunk_features.append(features)
@@ -237,9 +274,14 @@ def ai_detection_pipeline(text: str) -> tuple[float, str, dict, list[AISpan]]:
 
 
 async def analyze_document(text: str, document_id: str | None = None, filename: str | None = None) -> AnalyzeResponse:
+    started = time.perf_counter()
     cleaned = clean_text(text)
+    plagiarism_started = time.perf_counter()
     plagiarism_score, highlights, sources, plagiarism_metadata = await plagiarism_pipeline(cleaned)
+    plagiarism_seconds = round(time.perf_counter() - plagiarism_started, 3)
+    ai_started = time.perf_counter()
     ai_score, explanation, ai_features, ai_spans = ai_detection_pipeline(cleaned)
+    ai_seconds = round(time.perf_counter() - ai_started, 3)
 
     chunks_count = len(chunk_text(cleaned, chunk_words=250, overlap_words=50))
     return AnalyzeResponse(
@@ -256,5 +298,10 @@ async def analyze_document(text: str, document_id: str | None = None, filename: 
             "plagiarism": plagiarism_metadata,
             "ai_features": ai_features,
             "device": get_settings().device,
+            "timing": {
+                "total_seconds": round(time.perf_counter() - started, 3),
+                "plagiarism_seconds": plagiarism_seconds,
+                "ai_seconds": ai_seconds,
+            },
         },
     )

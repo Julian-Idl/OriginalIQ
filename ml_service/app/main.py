@@ -30,6 +30,7 @@ def health():
     return {
         "ok": True,
         "device": settings.device,
+        "device_info": settings.device_info,
         "sentence_model": settings.sentence_model,
         "web_search_enabled": bool(settings.serpapi_api_key),
         "warmup": warmup_status(),
