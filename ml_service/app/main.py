@@ -1,14 +1,26 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, File, UploadFile
 
 from .config import get_settings
 from .pipeline import analyze_document
 from .preprocessing import extract_text_from_upload, upload_metadata
 from .schemas import AnalyzeRequest, AnalyzeResponse
+from .warmup import warmup_models, warmup_status
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("OriginalIQ ML warmup starting...")
+    status = warmup_models()
+    print(f"OriginalIQ ML warmup complete in {status['duration_seconds']}s on {status['device']}.")
+    yield
 
 app = FastAPI(
-    title="Plagiarism and AI Detection ML Service",
+    title="OriginalIQ ML Service",
     version="1.0.0",
     description="FastAPI service for document extraction, plagiarism search, and AI detection.",
+    lifespan=lifespan,
 )
 
 
@@ -20,6 +32,7 @@ def health():
         "device": settings.device,
         "sentence_model": settings.sentence_model,
         "web_search_enabled": bool(settings.serpapi_api_key),
+        "warmup": warmup_status(),
     }
 
 
